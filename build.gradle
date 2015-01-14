@@ -16,35 +16,15 @@ buildscript {
     }
 }
 
-apply plugin: "curseforge"
-apply plugin: 'scala'
+apply from: './BuiltBrokenScripts/index.gradle'
 apply plugin: 'forge'
-//apply plugin: 'maven-publish'
-
-curse {
-    apiKey = System.getenv("Dmod_curse")
-    projectId = "2224319" // my project url is http://minecraft.curseforge.com/mc-mods/59652-seretroomsmod/
-    changelog = ""
-    releaseType = "alpha"
-
-    // the default obfuscated jar is uploaded by default
-    // artifact = project.file("some/jar/to/upload.jar")
-
-    // allows you to add extra compatible MC versions. The one specified in the minecraft{} block is used by default.
-     addGameVersion "1.7.10"
-    // addGameversion "1.7.0", "1.7.4"
-}
 
 ext.buildProps = file "build.properties"
 
-if (System.getenv("BUILD_NUMBER") != null) {
-	version = "${System.getenv("BUILD_NUMBER")}"
-}
- else {
-	version = "NIGHTLY"
-}
+println "Current Minecraft version = " + minecraft.apiVersion
 
-ext.buildProps = file "build.properties"
+def currentJvm = org.gradle.internal.jvm.Jvm.current()
+println "Current Java version = " + currentJvm
 
 buildProps.withReader {
     def prop = new Properties()
@@ -52,71 +32,109 @@ buildProps.withReader {
     ext.config = new ConfigSlurper().parse prop
 }
 
-version = "${config.version.mod.major}.${config.version.mod.minor}.${config.version.mod.revis}b${System.getenv().BUILD_NUMBER}"
+if (project.getProperty("bambooshortPlanName") == "BBM-Dev") {
+    group = "dev.builtbroken.tinkertoys"
+    archivesBaseName = "TinkerToys"
+} else {
+    group = "dev.builtbroken.tinkertoys"
+    archivesBaseName = "TinkerToys"
+}
+
+println archivesBaseName 
+
+version = "${project.minecraft.version}-${config.version.mod.major}.${config.version.mod.minor}.${config.version.mod.revis}b"
+
+// This is used to set the local version
+if (project.hasProperty("bambooBuildNumber"))
+    version += project.bambooBuildNumber
+else
+    version += getDate()
+
+println "version = "+ version
 
 minecraft {
-    version = "${config.version.minecraft}-${config.version.forge}"
-
-    replaceIn "References.java"
-    replace "@MAJOR@", config.version.mod.major
-    replace "@MINOR@", config.version.mod.minor
-    replace "@REVIS@", config.version.mod.revis
-    replace "@BUILD@", System.getenv("BUILD_NUMBER")
+	replace "@MAJOR@", config.version.mod.major
+	replace "@MINOR@", config.version.mod.minor
+	replace "@REVIS@", config.version.mod.revis
+	
+	if (project.hasProperty("bambooBuildNumber")) {
+		replace "@BUILD@", project.bambooBuildNumber
+	}
+	else {
+		replace "@BUILD@", getDate()
+	}
 }
-
-if (System.getenv("BUILD_NUMBER") != null)
-    version += ".${System.getenv("BUILD_NUMBER")}"
-
 processResources {
-    inputs.property "version", project.version
-    inputs.property "mcversion", project.minecraft.version
+	from(sourceSets.main.resources.srcDirs) {
+		//include '**/*.lang'
+		include '**/*.info'
+		include '**/*.properties'
 
-    // replace stuff in text files, not binary ones.
-    from(sourceSets.main.resources.srcDirs) {
-        include '**/*.info'
+		expand 'version': project.version, 'mcversion': project.minecraft.version
+		// replace version and MCVersion
+	}
 
-        // replace version and MCVersion
-        // forge version is also accessible via project.minecraftforgeVersion
-        // it contains the full minecraft version, including buildNumber
-        expand 'version': project.version, 'mcversion': project.minecraft.version
-    }
-
-    // copy everything else, thats not text
-    from 'build.properties'
+	// copy everything else, thats not text
+	from(sourceSets.main.resources.srcDirs) {
+		exclude '**/*.info'
+		exclude '**/*.properties'
+	}
 }
+
+publishing {
+  publications {
+    myPublication(MavenPublication) {      
+      pom.withXml {
+        from components.java
+        asNode().appendNode('description', 'Created on ' + getDate())        
+        def deps = configurations.compile.allDependencies
+        def dep_node = asNode().appendNode('dependencies')
+        
+        def dependencyNode = dep_node.appendNode('dependency')
+            dependencyNode.appendNode('groupId', 'net.industrial-craft')
+            dependencyNode.appendNode('artifactId', 'industrialcraft-2')
+            dependencyNode.appendNode('version', '2.2.654-experimental')
+        dependencyNode = dep_node.appendNode('dependency')
+            dependencyNode.appendNode('groupId', 'net.minecraftforge')
+            dependencyNode.appendNode('artifactId', 'forge')
+            dependencyNode.appendNode('version', project.version.forge)
+      }
+    }
+  }
+}
+
+
+archivesBaseName = "TinkerToys"
 
 repositories {
-    maven {
-        name "Calclavia Maven"
-        url "http://calclavia.com/maven"
-    }
-    maven {
-        name = "forge"
-        url = "http://files.minecraftforge.net/maven"
-    }
     maven {
         name "Mobius Repo"
         url "http://mobiusstrip.eu/maven"
     }
     maven {
-        name "chickenbones"
-        url "http://chickenbones.net/maven"
+        name 'CB Repo'
+        url "http://chickenbones.net/maven/"
     }
     maven { 
         name 'OC Maven'
-        url = "http://maven.cil.li/" 
+        url = "http://maven.cil.li/" }
+    maven {
+        name = "ic2"
+        url = "http://maven.ic2.player.to/"
     }
-	
-    mavenCentral()
 }
 
-dependencies {
-	testCompile 'junit:junit:4.11'
-    testCompile 'jmock:jmock:1.1.0'
-    compile group: 'dev.calclavia.resonantengine', name: 'resonant-engine', version: "${config.version.resonantengine}", classifier: "dev"
-    compile "li.cil.oc:OpenComputers:MC1.7.10-1.4.0.+:api"
-    compile "codechicken:CodeChickenLib:${config.version.minecraft}-${config.version.cclib}:dev"
-    compile "codechicken:ForgeMultipart:${config.version.minecraft}-${config.version.fmp}:dev"
-    compile "codechicken:CodeChickenCore:${config.version.minecraft}-${config.version.cccore}:dev"
-    compile "codechicken:NotEnoughItems:${config.version.minecraft}-${config.version.nei}:dev"
+dependencies 
+{
+    testCompile 'junit:junit:4.11'
+    compile 'junit:junit:4.11'
+    compile "mcp.mobius.waila:Waila:1.5.8a_1.7.10"
+    compile "li.cil.oc:OpenComputers:MC1.7.10-1.4.0.+:dev"
+    compile "net.industrial-craft:industrialcraft-2:2.2.654-experimental:api"
+}
+
+def getDate() {
+    def date = new Date()
+    def formattedDate = date.format('yyyyMMddHHmmss')
+    return formattedDate
 }
